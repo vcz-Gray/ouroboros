@@ -38,6 +38,7 @@ from ouroboros.cli.commands import (
     setup,
     status,
     tui,
+    update,
     uninstall,
     workflow_ir,
 )
@@ -106,6 +107,7 @@ app.add_typer(pm.app, name="pm")
 app.command(name="qa", help="General-purpose QA verdict for any artifact.")(qa.qa_command)
 app.add_typer(plugin.app, name="plugin")
 app.add_typer(resume.app, name="resume")
+app.add_typer(update.app, name="update")
 app.add_typer(uninstall.app, name="uninstall")
 app.add_typer(workflow_ir.app, name="workflow-ir")
 
