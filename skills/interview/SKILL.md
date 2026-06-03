@@ -14,7 +14,7 @@ Socratic interview to crystallize vague requirements into clear specifications.
 
 ## Required Skill Capabilities
 
-- `ask_user` — ask human-judgment questions through the active runtime's user-question surface.
+- `ask_user` — ask human-judgment questions through the active runtime's user-question surface. On Hermes, default to the `clarify` tool with button-style choices whenever possible, one question at a time.
 - `inspect_code` — answer repo-local factual questions from exact local files before asking the user.
 - `call_mcp` — use Ouroboros MCP tools for persistent interview state and seed generation.
 - `web_research` — fetch current external facts only when the interview genuinely depends on them.

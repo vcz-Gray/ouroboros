@@ -50,7 +50,8 @@ from ouroboros.auto.state import (
 from ouroboros.auto.worktree import ensure_auto_worktree, release_auto_worktree
 from ouroboros.cli.formatters import console
 from ouroboros.cli.formatters.panels import print_error, print_info, print_success
-from ouroboros.config import get_opencode_mode
+from ouroboros.cli.formatters.prompting import multiline_prompt_async
+from ouroboros.config import get_default_config, get_opencode_mode, load_config
 from ouroboros.mcp.tools.authoring_handlers import GenerateSeedHandler, InterviewHandler
 from ouroboros.mcp.tools.execution_handlers import ExecuteSeedHandler, StartExecuteSeedHandler
 from ouroboros.mcp.tools.qa import QAHandler
@@ -348,6 +349,10 @@ async def _run_auto(
     progress_callback: AutoProgressCallback | None = None,
 ) -> AutoPipelineResult:
     store = AutoStore()
+    try:
+        config = load_config()
+    except Exception:
+        config = get_default_config()
     incoming_provenance = resolve_provenance()
     attach_requested = any(
         isinstance(item, str) and item.strip()
@@ -520,6 +525,8 @@ async def _run_auto(
         store=store,
         max_rounds=max_interview_rounds,
         timeout_seconds=state.phase_timeout_seconds(AutoPhase.INTERVIEW),
+        answer_mode=config.clarification.interview_answer_mode,
+        manual_answer_provider=multiline_prompt_async,
     )
     ralph_handler = (
         # Q00/ouroboros#782 review-7/8/10: pass the un-demoted

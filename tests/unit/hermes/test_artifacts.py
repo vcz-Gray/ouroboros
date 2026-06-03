@@ -89,6 +89,8 @@ class TestInstallHermesSkills:
             "restate_goal",
         ):
             assert f"### When a skill requires `{capability_name}`" in guide
+        assert "Hermes `clarify`" in guide
+        assert "button-style" in guide
 
     def test_replaces_existing_hermes_bundle(self, tmp_path: Path, monkeypatch) -> None:
         """Refreshing the Hermes install should replace managed skill directories."""

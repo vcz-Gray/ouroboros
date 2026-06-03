@@ -149,6 +149,23 @@ _GENERIC_SKILL_EXECUTION_CAPABILITIES: tuple[SkillExecutionCapability, ...] = (
     ),
 )
 
+_HERMES_SKILL_EXECUTION_CAPABILITIES: tuple[SkillExecutionCapability, ...] = (
+    SkillExecutionCapability(
+        name="ask_user",
+        guidance=(
+            "Use Hermes `clarify` as the default user-question surface. Prefer button-style "
+            "multiple-choice questions whenever the decision can be bounded; use open-ended "
+            "clarify prompts only when free text is genuinely required. Keep it to one question "
+            "at a time so Discord/Telegram render native button UI instead of a prose questionnaire."
+        ),
+    ),
+    *tuple(
+        capability
+        for capability in _GENERIC_SKILL_EXECUTION_CAPABILITIES
+        if capability.name != "ask_user"
+    ),
+)
+
 _CAPABILITIES: tuple[BackendCapability, ...] = (
     BackendCapability(
         name="claude",
@@ -203,7 +220,7 @@ _CAPABILITIES: tuple[BackendCapability, ...] = (
         switchable_runtime=True,
         cli_name="hermes",
         cli_config_key="hermes_cli_path",
-        skill_execution_capabilities=_GENERIC_SKILL_EXECUTION_CAPABILITIES,
+        skill_execution_capabilities=_HERMES_SKILL_EXECUTION_CAPABILITIES,
         supports_tool_envelope=False,
     ),
     BackendCapability(

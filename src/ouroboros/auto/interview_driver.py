@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import inspect
 import re
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -24,11 +24,13 @@ from ouroboros.auto.answerer import (
     AutoAnswerer,
     AutoAnswerSource,
     AutoBlocker,
+    _INTENT_TO_SECTIONS,
+    _classify_question_intents,
 )
 from ouroboros.auto.blocker_attribution import record_authoring_backend
 from ouroboros.auto.gap_detector import GapDetector
 from ouroboros.auto.lateral_routing import select_persona_for_safe_default_block
-from ouroboros.auto.ledger import LedgerSource, LedgerStatus, SeedDraftLedger
+from ouroboros.auto.ledger import LedgerEntry, LedgerSource, LedgerStatus, SeedDraftLedger
 from ouroboros.auto.progress import AutoProgressCallback, AutoProgressEvent
 from ouroboros.auto.repo_context import repo_auto_answer_context
 from ouroboros.auto.safe_defaults import (
@@ -265,7 +267,6 @@ class AutoInterviewDriver:
     # pre-issue behavior (matcher fire → immediate
     # ``interview_unsafe_gaps_remain`` BLOCKED), so existing call sites and
     # tests that construct the driver without this argument are unaffected.
-    # The behavior change that consumes this field ships in a separate PR.
     lateral_thinker: LateralThinker | None = None
     # RFC #1256 §I4 — Unified observability for ooo auto interview.
     # When set, the driver emits typed ``auto.interview.*`` events to the
@@ -277,6 +278,8 @@ class AutoInterviewDriver:
     # raised by the event store are caught and logged as warnings — an
     # observer is never permitted to break the interview loop.
     event_store: EventStore | None = None
+    answer_mode: Literal["auto", "ask_user"] = "ask_user"
+    manual_answer_provider: Callable[[str], Awaitable[str] | str] | None = None
     _last_emitted_message: str | None = field(default=None, init=False, repr=False)
     # Track outstanding background `_emit_event` tasks so tests and
     # operators can await deterministic completion via
@@ -727,7 +730,10 @@ class AutoInterviewDriver:
                         "backend_completed=True ledger_done=False]"
                     )
             else:
-                answer = self._answer_with_gap_steering(turn.question, ledger, answer_context)
+                if self.answer_mode == "ask_user":
+                    answer = await self._ask_user(turn.question, state, ledger)
+                else:
+                    answer = self._answer_with_gap_steering(turn.question, ledger, answer_context)
                 question_for_record = turn.question
 
             if answer.blocker is not None:
@@ -1639,6 +1645,46 @@ class AutoInterviewDriver:
         # call site needing to remember to fire the callback.
         self._emit(state)
 
+    async def _ask_user(
+        self,
+        question: str,
+        state: AutoPipelineState,
+        ledger: SeedDraftLedger,
+    ) -> AutoAnswer:
+        if self.manual_answer_provider is None:
+            blocker = AutoBlocker(
+                reason="interview_answer_mode=ask_user but no manual answer provider is configured",
+                question=question,
+            )
+            return AutoAnswer(
+                text=f"Cannot safely decide automatically: {blocker.reason}",
+                source=AutoAnswerSource.BLOCKER,
+                confidence=1.0,
+                blocker=blocker,
+            )
+
+        state.pending_question = question
+        state.mark_progress("awaiting user answer", tool_name="user_interview")
+        self._save(state)
+        response = self.manual_answer_provider(question)
+        if inspect.isawaitable(response):
+            response = await response
+        answer_text = str(response).strip()
+        if not answer_text:
+            blocker = AutoBlocker(reason="user answer cannot be empty", question=question)
+            return AutoAnswer(
+                text=f"Cannot safely decide automatically: {blocker.reason}",
+                source=AutoAnswerSource.BLOCKER,
+                confidence=1.0,
+                blocker=blocker,
+            )
+        return AutoAnswer(
+            text=answer_text,
+            source=AutoAnswerSource.USER_PREFERENCE,
+            confidence=1.0,
+            ledger_updates=_ledger_updates_from_user_answer(question, answer_text),
+        )
+
     def _record_evidence_based_session_id(
         self,
         state: AutoPipelineState,
@@ -1902,6 +1948,73 @@ def _truncate(text: str, limit: int) -> str:
 
 def _normalize_answer_text(text: str) -> str:
     return " ".join(str(text).casefold().split())
+
+
+def _ledger_updates_from_user_answer(question: str, answer_text: str) -> list[tuple[str, LedgerEntry]]:
+    """Hydrate ledger sections from a direct user interview answer."""
+
+    updates: list[tuple[str, LedgerEntry]] = []
+    synthetic = SeedDraftLedger.from_goal(answer_text)
+    for section_name, section in synthetic.sections.items():
+        if section_name == "goal":
+            continue
+        for idx, entry in enumerate(section.entries, start=1):
+            updates.append(
+                (
+                    section_name,
+                    LedgerEntry(
+                        key=f"{section_name}.user_answer.{idx}",
+                        value=entry.value,
+                        source=(
+                            LedgerSource.NON_GOAL
+                            if section_name == "non_goals"
+                            else LedgerSource.USER_PREFERENCE
+                        ),
+                        confidence=1.0,
+                        status=LedgerStatus.CONFIRMED,
+                        rationale=f"Direct user interview answer to: {question}",
+                        reversible=False,
+                    ),
+                )
+            )
+    if updates:
+        return updates
+
+    target_sections: list[str] = []
+    for intent in _classify_question_intents(question):
+        target_sections.extend(_INTENT_TO_SECTIONS.get(intent, ()))
+    if not target_sections:
+        target_sections = ["constraints"]
+
+    deduped_sections: list[str] = []
+    for section_name in target_sections:
+        if section_name not in deduped_sections:
+            deduped_sections.append(section_name)
+
+    for section_name in deduped_sections:
+        updates.append(
+            (
+                section_name,
+                LedgerEntry(
+                    key=f"{section_name}.user_answer",
+                    value=answer_text,
+                    source=(
+                        LedgerSource.NON_GOAL
+                        if section_name == "non_goals"
+                        else LedgerSource.USER_PREFERENCE
+                    ),
+                    confidence=1.0,
+                    status=(
+                        LedgerStatus.WEAK
+                        if section_name in {"actors", "inputs", "outputs"}
+                        else LedgerStatus.CONFIRMED
+                    ),
+                    rationale=f"Direct user interview answer to: {question}",
+                    reversible=False,
+                ),
+            )
+        )
+    return updates
 
 
 def _validate_turn(value: object) -> InterviewTurn:

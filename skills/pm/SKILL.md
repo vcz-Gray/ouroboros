@@ -58,6 +58,8 @@ After every MCP response, do these three things:
 
 Print the MCP content text to the user first.
 
+On Hermes, ask follow-up interview questions through `clarify` and prefer button-style choices whenever the decision can be bounded. Keep it to one question at a time so Discord/Telegram render native buttons.
+
 Tell users they do not need to invent speculative answers. If a question is
 unknown, stakeholder-dependent, too broad, or safer to decide later, route it
 through the existing assumptions / decide-later / deferred mechanisms instead

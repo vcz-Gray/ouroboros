@@ -183,6 +183,7 @@ class ClarificationConfig(BaseModel, frozen=True):
     max_interview_rounds: int = Field(default=10, ge=1)
     model_tier: Literal["frugal", "standard", "frontier"] = "standard"
     default_model: str = DEFAULT_OPUS_MODEL
+    interview_answer_mode: Literal["auto", "ask_user"] = "ask_user"
 
 
 class ExecutionConfig(BaseModel, frozen=True):

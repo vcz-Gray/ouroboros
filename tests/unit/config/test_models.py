@@ -166,10 +166,12 @@ class TestClarificationConfig:
             ambiguity_threshold=0.15,
             max_interview_rounds=15,
             model_tier="frontier",
+            interview_answer_mode="ask_user",
         )
         assert config.ambiguity_threshold == 0.15
         assert config.max_interview_rounds == 15
         assert config.model_tier == "frontier"
+        assert config.interview_answer_mode == "ask_user"
 
     def test_clarification_config_defaults(self) -> None:
         """ClarificationConfig has sensible defaults."""
@@ -177,6 +179,7 @@ class TestClarificationConfig:
         assert config.ambiguity_threshold == 0.2
         assert config.max_interview_rounds == 10
         assert config.model_tier == "standard"
+        assert config.interview_answer_mode == "ask_user"
 
     def test_clarification_ambiguity_threshold_bounds(self) -> None:
         """ClarificationConfig ambiguity_threshold must be in [0, 1]."""
